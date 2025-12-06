@@ -181,7 +181,7 @@ exports.createLeave = async (req, res) => {
       status: { $in: ['pending', 'confirmed', 'scheduled', 'rescheduled'] }
     }).populate('mrId', 'name email');
     
-    const { sendEmailAsync } = require('../utils/emailService');
+    const { sendEmail } = require('../utils/emailService');
     const { findAvailableSlots } = require('../utils/smartRescheduling');
     const Slot = require('../models/Slot');
     
@@ -232,10 +232,10 @@ exports.createLeave = async (req, res) => {
               relatedId: apt._id
             });
             
-            // Send email notification (non-blocking)
+            // Send email notification
             console.log("apt--->",apt)
             if (apt.mrId?.email) {
-              sendEmailAsync(
+              await sendEmail(
                 apt.mrId.email,
                 'Appointment Rescheduled - Doctor on Leave',
                 `
@@ -263,9 +263,9 @@ exports.createLeave = async (req, res) => {
               relatedId: apt._id
             });
             
-            // Send email notification (non-blocking)
+            // Send email notification
             if (apt.mrId?.email) {
-              sendEmailAsync(
+              await sendEmail(
                 apt.mrId.email,
                 'Appointment Cancelled - Doctor on Leave',
                 `
@@ -305,9 +305,9 @@ exports.createLeave = async (req, res) => {
           relatedId: apt._id
         });
         
-        // Send email notification (non-blocking)
+        // Send email notification
         if (apt.mrId?.email) {
-          sendEmailAsync(
+          await sendEmail(
             apt.mrId.email,
             'Appointment Cancelled - Doctor on Leave',
             `

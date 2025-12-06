@@ -2,11 +2,7 @@ const Appointment = require('../models/Appointment');
 const Slot = require('../models/Slot');
 const Notification = require('../models/Notification');
 const { getNextAvailableSlot } = require('../utils/slotGenerator');
-const { 
-  sendAppointmentConfirmationAsync,
-  sendAppointmentCancellationAsync,
-  sendAppointmentCompletionAsync 
-} = require('../utils/emailService');
+const { sendAppointmentConfirmation } = require('../utils/emailService');
 const Doctor = require('../models/Doctor');
 const MR = require('../models/MR');
 
@@ -20,16 +16,27 @@ exports.bookAppointment = async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found' });
     }
 
-    // Cycle days = how many days in advance MR can book
-    // e.g., cycleDays = 1 means MR can book slots starting from tomorrow
+    // Check if MR already has an appointment within the cycle period
     const cycleDays = doctor.bookingCycleDays || 1;
-    
-    // Calculate the earliest date MR can book (today + cycleDays)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const earliestBookingDate = new Date(today);
-    earliestBookingDate.setDate(earliestBookingDate.getDate() + cycleDays);
+    const now = new Date();
+    const cycleStartDate = new Date(now);
+    cycleStartDate.setDate(cycleStartDate.getDate() - cycleDays);
+
+    const existingAppointment = await Appointment.findOne({
+      doctorId,
+      mrId: req.user.id,
+      date: { $gte: cycleStartDate },
+      status: { $in: ['confirmed', 'completed'] }
+    });
+
+    if (existingAppointment) {
+      const nextAvailableDate = new Date(existingAppointment.date);
+      nextAvailableDate.setDate(nextAvailableDate.getDate() + cycleDays);
+      
+      return res.status(400).json({ 
+        message: `You already have an appointment with this doctor within the ${cycleDays}-day cycle. Next booking available after ${nextAvailableDate.toLocaleDateString()}`
+      });
+    }
 
     let slot;
     
@@ -49,30 +56,13 @@ exports.bookAppointment = async (req, res) => {
         return res.status(400).json({ message: 'Invalid slot for this doctor' });
       }
 
-      // Check if slot date is valid (must be >= earliestBookingDate)
-      const slotDate = new Date(slot.date);
-      slotDate.setHours(0, 0, 0, 0);
+      // Check if slot is within allowed booking window
+      const maxBookingDate = new Date();
+      maxBookingDate.setDate(maxBookingDate.getDate() + cycleDays);
       
-      if (slotDate < earliestBookingDate) {
+      if (new Date(slot.date) > maxBookingDate) {
         return res.status(400).json({ 
-          message: `You can only book slots from ${earliestBookingDate.toLocaleDateString()} onwards (${cycleDays}-day advance booking required)` 
-        });
-      }
-      
-      // Check if MR already has an appointment on the SAME DATE with this doctor
-      const existingAppointment = await Appointment.findOne({
-        doctorId,
-        mrId: req.user.id,
-        date: {
-          $gte: new Date(slot.date.setHours(0, 0, 0, 0)),
-          $lt: new Date(new Date(slot.date).setHours(23, 59, 59, 999))
-        },
-        status: { $in: ['confirmed'] }
-      });
-
-      if (existingAppointment) {
-        return res.status(400).json({ 
-          message: `You already have an appointment with this doctor on ${new Date(slot.date).toLocaleDateString()}`
+          message: `Slots beyond ${cycleDays} days are not yet available for booking` 
         });
       }
     } else {
@@ -126,8 +116,8 @@ exports.bookAppointment = async (req, res) => {
       relatedId: appointment._id
     });
 
-    // Send email (non-blocking - don't wait for response)
-    sendAppointmentConfirmationAsync(
+    // Send email
+    await sendAppointmentConfirmation(
       mr.email,
       doctor.name,
       slot.date.toLocaleDateString(),
@@ -267,8 +257,9 @@ exports.updateAppointmentStatus = async (req, res) => {
       
       appointment.cancellationReason = cancellationReason;
 
-      // Send cancellation email to MR (non-blocking)
-      sendAppointmentCancellationAsync(
+      // Send cancellation email to MR
+      const { sendAppointmentCancellation } = require('../utils/emailService');
+      await sendAppointmentCancellation(
         appointment.mrId.email,
         appointment.mrId.name,
         appointment.doctorId.name,
@@ -288,9 +279,10 @@ exports.updateAppointmentStatus = async (req, res) => {
       });
     }
 
-    // If completing appointment, send completion email (non-blocking)
+    // If completing appointment, send completion email
     if (status === 'completed' && appointment.status !== 'completed') {
-      sendAppointmentCompletionAsync(
+      const { sendAppointmentCompletion } = require('../utils/emailService');
+      await sendAppointmentCompletion(
         appointment.mrId.email,
         appointment.mrId.name,
         appointment.doctorId.name,
@@ -332,15 +324,13 @@ exports.getDoctorSlots = async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found' });
     }
 
-    // Cycle days = how many days in advance MR can book
     const cycleDays = doctor.bookingCycleDays || 1;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Calculate earliest booking date (today + cycleDays)
-    // e.g., cycleDays = 1 means can book from tomorrow
-    const earliestBookingDate = new Date(today);
-    earliestBookingDate.setDate(earliestBookingDate.getDate() + cycleDays);
+    // Calculate max booking date based on cycle
+    const maxBookingDate = new Date(today);
+    maxBookingDate.setDate(maxBookingDate.getDate() + cycleDays);
 
     let query = { doctorId };
 
@@ -362,9 +352,10 @@ exports.getDoctorSlots = async (req, res) => {
         $lt: nextDay
       };
     } else {
-      // Show slots from earliest booking date onwards (no upper limit)
+      // Only show slots within the booking cycle window
       query.date = { 
-        $gte: earliestBookingDate
+        $gte: today,
+        $lte: maxBookingDate
       };
     }
 
@@ -400,7 +391,7 @@ exports.getDoctorSlots = async (req, res) => {
       success: true, 
       slots,
       bookingCycleDays: cycleDays,
-      earliestBookingDate: earliestBookingDate.toISOString()
+      maxBookingDate: maxBookingDate.toISOString()
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

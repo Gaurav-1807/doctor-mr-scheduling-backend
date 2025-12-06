@@ -3,7 +3,7 @@ const { Resend } = require('resend');
 // Initialize Resend with API key
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// From email - use your verified domain or Resend's default
+// From email (must be verified in Resend or use onboarding@resend.dev for testing)
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'MRAlo <onboarding@resend.dev>';
 
 const getEmailTemplate = (content) => {
@@ -25,6 +25,7 @@ const getEmailTemplate = (content) => {
         .info-box { background-color: #f9fafb; border-left: 4px solid #3B82F6; padding: 20px; margin: 20px 0; border-radius: 4px; }
         .info-box p { margin: 8px 0; }
         .info-label { font-weight: 600; color: #4b5563; }
+        .button { display: inline-block; background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: 600; }
         .email-footer { background-color: #f9fafb; padding: 25px 30px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
       </style>
     </head>
@@ -50,7 +51,7 @@ const getEmailTemplate = (content) => {
 const sendEmail = async (to, subject, html) => {
   try {
     if (!process.env.RESEND_API_KEY) {
-      console.log(`⚠️ Resend API key not configured - skipping email to ${to}`);
+      console.log(`⚠️ Resend API key not configured - skipping email`);
       return false;
     }
 
@@ -71,19 +72,12 @@ const sendEmail = async (to, subject, html) => {
       return false;
     }
 
-    console.log(`✅ Email sent to ${to}, ID: ${data?.id}`);
+    console.log(`✅ Email sent to ${to}`, data?.id);
     return true;
   } catch (error) {
     console.error(`❌ Email failed to ${to}:`, error.message);
     return false;
   }
-};
-
-// Fire-and-forget wrapper - doesn't wait for email to complete
-const sendEmailAsync = (to, subject, html) => {
-  sendEmail(to, subject, html).catch(err => {
-    console.error(`Background email failed to ${to}:`, err.message);
-  });
 };
 
 
@@ -163,34 +157,11 @@ const sendAppointmentCompletion = async (mrEmail, mrName, doctorName, date, time
   return sendEmail(mrEmail, subject, html);
 };
 
-// Non-blocking async versions
-const sendAppointmentConfirmationAsync = (mrEmail, doctorName, date, time) => {
-  sendAppointmentConfirmation(mrEmail, doctorName, date, time).catch(err => {
-    console.error('Background confirmation email failed:', err.message);
-  });
-};
-
-const sendAppointmentCancellationAsync = (mrEmail, mrName, doctorName, date, time, reason) => {
-  sendAppointmentCancellation(mrEmail, mrName, doctorName, date, time, reason).catch(err => {
-    console.error('Background cancellation email failed:', err.message);
-  });
-};
-
-const sendAppointmentCompletionAsync = (mrEmail, mrName, doctorName, date, time) => {
-  sendAppointmentCompletion(mrEmail, mrName, doctorName, date, time).catch(err => {
-    console.error('Background completion email failed:', err.message);
-  });
-};
-
 module.exports = {
   sendEmail,
-  sendEmailAsync,
   sendAppointmentConfirmation,
-  sendAppointmentConfirmationAsync,
   sendFollowUpReminder,
   sendDailyScheduleEmail,
   sendAppointmentCancellation,
-  sendAppointmentCancellationAsync,
-  sendAppointmentCompletion,
-  sendAppointmentCompletionAsync
+  sendAppointmentCompletion
 };
