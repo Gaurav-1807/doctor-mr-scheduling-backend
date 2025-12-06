@@ -79,7 +79,7 @@ const sendEmail = async (to, subject, html) => {
     }
 
     console.log(`✅ Email sent to ${to}`);
-    console.log(`✅ Email sent to ${response}`);
+    console.log(`✅ Email sent to ${JSON.stringify(response)}`);
     return true;
   } catch (error) {
     console.error(`❌ Email failed to ${to}:`, error.message);
