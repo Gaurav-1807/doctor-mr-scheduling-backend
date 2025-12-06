@@ -151,13 +151,13 @@ exports.getAppointments = async (req, res) => {
     
     // Single date filter
     if (date) {
-      const searchDate = new Date(date);
-      const nextDay = new Date(searchDate);
-      nextDay.setDate(nextDay.getDate() + 1);
+      // Parse date string and create start/end of day in UTC
+      const searchDate = new Date(date + 'T00:00:00.000Z');
+      const nextDay = new Date(date + 'T23:59:59.999Z');
       
       query.date = {
         $gte: searchDate,
-        $lt: nextDay
+        $lte: nextDay
       };
     }
     
