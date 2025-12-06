@@ -124,7 +124,7 @@ const sendEmail = async (to, subject, html) => {
       return false;
     }
 
-    await transporter.sendMail({
+    transporter.sendMail({
       from: `"MRAlo" <${process.env.EMAIL_USER}>`,
       to: to.trim(),
       subject,
