@@ -1,18 +1,5 @@
-const nodemailer = require('nodemailer');
-
-// Brevo (Sendinblue) SMTP configuration
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_API_KEY
-  }
-});
-
-const FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'noreply@mralo.com';
-const FROM_NAME = process.env.BREVO_FROM_NAME || 'MRAlo';
+// Brevo API for sending emails
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
 const getEmailTemplate = (content) => {
   return `
@@ -33,7 +20,6 @@ const getEmailTemplate = (content) => {
         .info-box { background-color: #f9fafb; border-left: 4px solid #3B82F6; padding: 20px; margin: 20px 0; border-radius: 4px; }
         .info-box p { margin: 8px 0; }
         .info-label { font-weight: 600; color: #4b5563; }
-        .button { display: inline-block; background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: 600; }
         .email-footer { background-color: #f9fafb; padding: 25px 30px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
       </style>
     </head>
@@ -68,12 +54,29 @@ const sendEmail = async (to, subject, html) => {
       return false;
     }
 
-    await transporter.sendMail({
-      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
-      to: to.trim(),
-      subject,
-      html: getEmailTemplate(html)
+    const response = await fetch(BREVO_API_URL, {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': process.env.BREVO_API_KEY,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: {
+          name: process.env.BREVO_FROM_NAME || 'MRAlo',
+          email: process.env.BREVO_FROM_EMAIL || 'noreply@mralo.com'
+        },
+        to: [{ email: to.trim() }],
+        subject: subject,
+        htmlContent: getEmailTemplate(html)
+      })
     });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error(`❌ Email failed to ${to}:`, error.message || error);
+      return false;
+    }
 
     console.log(`✅ Email sent to ${to}`);
     return true;
