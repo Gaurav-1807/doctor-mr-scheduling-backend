@@ -6,23 +6,38 @@ const Appointment = require('../models/Appointment');
 // @access  Private
 exports.getVisits = async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { visitStatus, page = 1, limit = 20 } = req.query;
     
-    let query = { mr: req.user.id };
-    if (status) query.status = status;
+    let query = { mrId: req.user.id };
+    if (visitStatus) query.visitStatus = visitStatus;
     
     const visits = await VisitTracking.find(query)
-      .populate('doctor', 'name specialty')
-      .populate('appointment', 'date timeSlot')
+      .populate('doctorId', 'name speciality')
+      .populate('appointmentId', 'date startTime endTime')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
+    
+    // Map to frontend-friendly format
+    const mappedVisits = visits.map(v => ({
+      _id: v._id,
+      doctor: v.doctorId,
+      appointment: v.appointmentId,
+      visitType: v.visitType,
+      status: v.visitStatus,
+      checkInTime: v.checkInTime,
+      checkOutTime: v.checkOutTime,
+      duration: v.duration,
+      notes: v.talkingSummary,
+      geoLocation: v.geoLocation,
+      createdAt: v.createdAt
+    }));
     
     const total = await VisitTracking.countDocuments(query);
     
     res.json({
       success: true,
-      data: visits,
+      data: mappedVisits,
       pagination: { total, page: parseInt(page), totalPages: Math.ceil(total / limit) }
     });
   } catch (error) {
@@ -36,10 +51,10 @@ exports.getVisits = async (req, res) => {
 exports.getVisitStats = async (req, res) => {
   try {
     const stats = await VisitTracking.aggregate([
-      { $match: { mr: req.user._id } },
+      { $match: { mrId: req.user._id } },
       {
         $group: {
-          _id: '$status',
+          _id: '$visitStatus',
           count: { $sum: 1 },
           avgDuration: { $avg: '$duration' }
         }
@@ -57,7 +72,7 @@ exports.getVisitStats = async (req, res) => {
 // @access  Private
 exports.getVisitTimeline = async (req, res) => {
   try {
-    const visits = await VisitTracking.find({ appointment: req.params.appointmentId })
+    const visits = await VisitTracking.find({ appointmentId: req.params.appointmentId })
       .sort({ createdAt: -1 });
     
     res.json({ success: true, data: visits });
@@ -72,9 +87,9 @@ exports.getVisitTimeline = async (req, res) => {
 exports.getVisit = async (req, res) => {
   try {
     const visit = await VisitTracking.findById(req.params.id)
-      .populate('doctor', 'name specialty')
-      .populate('mr', 'name company')
-      .populate('appointment');
+      .populate('doctorId', 'name speciality')
+      .populate('mrId', 'name company')
+      .populate('appointmentId');
     
     if (!visit) {
       return res.status(404).json({ success: false, message: 'Visit not found' });
@@ -86,29 +101,54 @@ exports.getVisit = async (req, res) => {
   }
 };
 
-// @desc    Create visit
+
+// @desc    Create visit (Check-in)
 // @route   POST /api/visits
 // @access  Private (MR)
 exports.createVisit = async (req, res) => {
   try {
     const { appointment, doctor, visitType, checkInLocation } = req.body;
     
+    // Map visitType to valid enum values
+    // Valid: 'sample_drop', 'promotion', 'stock_check', 'inquiry_followup', 'general'
+    const validVisitTypes = ['sample_drop', 'promotion', 'stock_check', 'inquiry_followup', 'general'];
+    const mappedVisitType = validVisitTypes.includes(visitType) ? visitType : 'general';
+    
     const visit = await VisitTracking.create({
-      appointment,
-      doctor,
-      mr: req.user.id,
-      visitType: visitType || 'scheduled',
-      status: 'in-progress',
+      appointmentId: appointment,
+      doctorId: doctor,
+      mrId: req.user.id,
+      visitType: mappedVisitType,
+      visitStatus: 'successful', // Will update on checkout if needed
       checkInTime: new Date(),
-      checkInLocation
+      geoLocation: checkInLocation ? {
+        latitude: checkInLocation.latitude,
+        longitude: checkInLocation.longitude
+      } : undefined
     });
     
     // Update appointment status
     if (appointment) {
-      await Appointment.findByIdAndUpdate(appointment, { status: 'in-progress' });
+      await Appointment.findByIdAndUpdate(appointment, { status: 'completed' });
     }
     
-    res.status(201).json({ success: true, data: visit });
+    // Return mapped response
+    const populatedVisit = await VisitTracking.findById(visit._id)
+      .populate('doctorId', 'name speciality')
+      .populate('appointmentId', 'date startTime endTime');
+    
+    res.status(201).json({ 
+      success: true, 
+      data: {
+        _id: populatedVisit._id,
+        doctor: populatedVisit.doctorId,
+        appointment: populatedVisit.appointmentId,
+        visitType: populatedVisit.visitType,
+        status: 'in-progress',
+        checkInTime: populatedVisit.checkInTime,
+        geoLocation: populatedVisit.geoLocation
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -135,33 +175,6 @@ exports.updateVisit = async (req, res) => {
   }
 };
 
-// @desc    Check in
-// @route   PUT /api/visits/:id/check-in
-// @access  Private (MR)
-exports.checkIn = async (req, res) => {
-  try {
-    const { checkInLocation } = req.body;
-    
-    const visit = await VisitTracking.findByIdAndUpdate(
-      req.params.id,
-      {
-        checkInTime: new Date(),
-        checkInLocation,
-        status: 'in-progress'
-      },
-      { new: true }
-    );
-    
-    if (!visit) {
-      return res.status(404).json({ success: false, message: 'Visit not found' });
-    }
-    
-    res.json({ success: true, data: visit });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
 // @desc    Check out
 // @route   PUT /api/visits/:id/check-out
 // @access  Private (MR)
@@ -176,9 +189,17 @@ exports.checkOut = async (req, res) => {
     }
     
     visit.checkOutTime = new Date();
-    visit.checkOutLocation = checkOutLocation;
-    visit.status = 'completed';
-    visit.notes = notes;
+    visit.visitStatus = 'successful';
+    visit.talkingSummary = notes;
+    
+    // Update checkout location
+    if (checkOutLocation) {
+      visit.geoLocation = {
+        ...visit.geoLocation,
+        latitude: checkOutLocation.latitude,
+        longitude: checkOutLocation.longitude
+      };
+    }
     
     // Calculate duration in minutes
     if (visit.checkInTime) {
@@ -188,11 +209,20 @@ exports.checkOut = async (req, res) => {
     await visit.save();
     
     // Update appointment status
-    if (visit.appointment) {
-      await Appointment.findByIdAndUpdate(visit.appointment, { status: 'completed' });
+    if (visit.appointmentId) {
+      await Appointment.findByIdAndUpdate(visit.appointmentId, { status: 'completed' });
     }
     
-    res.json({ success: true, data: visit });
+    res.json({ 
+      success: true, 
+      data: {
+        _id: visit._id,
+        status: 'completed',
+        checkOutTime: visit.checkOutTime,
+        duration: visit.duration,
+        notes: visit.talkingSummary
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -209,7 +239,9 @@ exports.addNote = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Visit not found' });
     }
     
-    visit.notes = visit.notes ? `${visit.notes}\n${req.body.note}` : req.body.note;
+    visit.talkingSummary = visit.talkingSummary 
+      ? `${visit.talkingSummary}\n${req.body.note}` 
+      : req.body.note;
     await visit.save();
     
     res.json({ success: true, data: visit });
@@ -269,14 +301,11 @@ exports.captureSignature = async (req, res) => {
 // @access  Private (Doctor)
 exports.addDoctorFeedback = async (req, res) => {
   try {
-    const { feedback, rating } = req.body;
+    const { feedback } = req.body;
     
     const visit = await VisitTracking.findByIdAndUpdate(
       req.params.id,
-      { 
-        doctorFeedback: feedback,
-        doctorRating: rating
-      },
+      { doctorFeedback: feedback },
       { new: true }
     );
     
