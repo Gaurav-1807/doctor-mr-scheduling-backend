@@ -1,10 +1,18 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-// Initialize Resend with API key
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Brevo (Sendinblue) SMTP configuration
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_API_KEY
+  }
+});
 
-// From email (must be verified in Resend or use onboarding@resend.dev for testing)
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'MRAlo <onboarding@resend.dev>';
+const FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'noreply@mralo.com';
+const FROM_NAME = process.env.BREVO_FROM_NAME || 'MRAlo';
 
 const getEmailTemplate = (content) => {
   return `
@@ -50,8 +58,8 @@ const getEmailTemplate = (content) => {
 
 const sendEmail = async (to, subject, html) => {
   try {
-    if (!process.env.RESEND_API_KEY) {
-      console.log(`⚠️ Resend API key not configured - skipping email`);
+    if (!process.env.BREVO_API_KEY) {
+      console.log(`⚠️ Brevo API key not configured - skipping email`);
       return false;
     }
 
@@ -60,26 +68,20 @@ const sendEmail = async (to, subject, html) => {
       return false;
     }
 
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    await transporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
       to: to.trim(),
       subject,
       html: getEmailTemplate(html)
     });
 
-    if (error) {
-      console.error(`❌ Email failed to ${to}:`, error.message);
-      return false;
-    }
-
-    console.log(`✅ Email sent to ${to}`, data?.id);
+    console.log(`✅ Email sent to ${to}`);
     return true;
   } catch (error) {
     console.error(`❌ Email failed to ${to}:`, error.message);
     return false;
   }
 };
-
 
 const sendAppointmentConfirmation = async (mrEmail, doctorName, date, time) => {
   const subject = '✅ Appointment Confirmed - MRAlo';
