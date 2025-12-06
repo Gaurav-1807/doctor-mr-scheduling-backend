@@ -175,6 +175,35 @@ exports.updateVisit = async (req, res) => {
   }
 };
 
+// @desc    Check in (update existing visit)
+// @route   PUT /api/visits/:id/check-in
+// @access  Private (MR)
+exports.checkIn = async (req, res) => {
+  try {
+    const { checkInLocation } = req.body;
+    
+    const visit = await VisitTracking.findById(req.params.id);
+    
+    if (!visit) {
+      return res.status(404).json({ success: false, message: 'Visit not found' });
+    }
+    
+    visit.checkInTime = new Date();
+    if (checkInLocation) {
+      visit.geoLocation = {
+        latitude: checkInLocation.latitude,
+        longitude: checkInLocation.longitude
+      };
+    }
+    
+    await visit.save();
+    
+    res.json({ success: true, data: visit });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Check out
 // @route   PUT /api/visits/:id/check-out
 // @access  Private (MR)
