@@ -1,13 +1,10 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-// Basic nodemailer transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+// Initialize Resend with API key
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// From email - use your verified domain or Resend's default
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'MRAlo <onboarding@resend.dev>';
 
 const getEmailTemplate = (content) => {
   return `
@@ -18,79 +15,17 @@ const getEmailTemplate = (content) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>MRAlo</title>
       <style>
-        body {
-          margin: 0;
-          padding: 0;
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background-color: #f3f4f6;
-        }
-        .email-container {
-          max-width: 600px;
-          margin: 20px auto;
-          background-color: #ffffff;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .email-header {
-          background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .brand-name {
-          color: white;
-          font-size: 36px;
-          font-weight: bold;
-          margin: 10px 0 5px 0;
-          letter-spacing: 2px;
-        }
-        .brand-tagline {
-          color: rgba(255, 255, 255, 0.9);
-          font-size: 14px;
-          margin: 0;
-        }
-        .email-body {
-          padding: 40px 30px;
-          color: #374151;
-          line-height: 1.6;
-        }
-        .email-body h2 {
-          color: #1f2937;
-          margin-top: 0;
-          font-size: 24px;
-        }
-        .info-box {
-          background-color: #f9fafb;
-          border-left: 4px solid #3B82F6;
-          padding: 20px;
-          margin: 20px 0;
-          border-radius: 4px;
-        }
-        .info-box p {
-          margin: 8px 0;
-        }
-        .info-label {
-          font-weight: 600;
-          color: #4b5563;
-        }
-        .button {
-          display: inline-block;
-          background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-          color: white;
-          padding: 14px 32px;
-          text-decoration: none;
-          border-radius: 8px;
-          margin: 20px 0;
-          font-weight: 600;
-        }
-        .email-footer {
-          background-color: #f9fafb;
-          padding: 25px 30px;
-          text-align: center;
-          color: #6b7280;
-          font-size: 13px;
-          border-top: 1px solid #e5e7eb;
-        }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .email-container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .email-header { background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); padding: 30px 20px; text-align: center; }
+        .brand-name { color: white; font-size: 36px; font-weight: bold; margin: 10px 0 5px 0; letter-spacing: 2px; }
+        .brand-tagline { color: rgba(255, 255, 255, 0.9); font-size: 14px; margin: 0; }
+        .email-body { padding: 40px 30px; color: #374151; line-height: 1.6; }
+        .email-body h2 { color: #1f2937; margin-top: 0; font-size: 24px; }
+        .info-box { background-color: #f9fafb; border-left: 4px solid #3B82F6; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .info-box p { margin: 8px 0; }
+        .info-label { font-weight: 600; color: #4b5563; }
+        .email-footer { background-color: #f9fafb; padding: 25px 30px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
       </style>
     </head>
     <body>
@@ -114,8 +49,8 @@ const getEmailTemplate = (content) => {
 
 const sendEmail = async (to, subject, html) => {
   try {
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.log(`⚠️ Email not configured - skipping`);
+    if (!process.env.RESEND_API_KEY) {
+      console.log(`⚠️ Resend API key not configured - skipping email to ${to}`);
       return false;
     }
 
@@ -124,19 +59,31 @@ const sendEmail = async (to, subject, html) => {
       return false;
     }
 
-    transporter.sendMail({
-      from: `"MRAlo" <${process.env.EMAIL_USER}>`,
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
       to: to.trim(),
       subject,
       html: getEmailTemplate(html)
     });
 
-    console.log(`✅ Email sent to ${to}`);
+    if (error) {
+      console.error(`❌ Email failed to ${to}:`, error.message);
+      return false;
+    }
+
+    console.log(`✅ Email sent to ${to}, ID: ${data?.id}`);
     return true;
   } catch (error) {
     console.error(`❌ Email failed to ${to}:`, error.message);
     return false;
   }
+};
+
+// Fire-and-forget wrapper - doesn't wait for email to complete
+const sendEmailAsync = (to, subject, html) => {
+  sendEmail(to, subject, html).catch(err => {
+    console.error(`Background email failed to ${to}:`, err.message);
+  });
 };
 
 
@@ -216,15 +163,7 @@ const sendAppointmentCompletion = async (mrEmail, mrName, doctorName, date, time
   return sendEmail(mrEmail, subject, html);
 };
 
-// Fire-and-forget wrapper - doesn't wait for email to complete
-const sendEmailAsync = (to, subject, html) => {
-  // Don't await - just fire and forget
-  sendEmail(to, subject, html).catch(err => {
-    console.error(`Background email failed to ${to}:`, err.message);
-  });
-};
-
-// Non-blocking versions of email functions
+// Non-blocking async versions
 const sendAppointmentConfirmationAsync = (mrEmail, doctorName, date, time) => {
   sendAppointmentConfirmation(mrEmail, doctorName, date, time).catch(err => {
     console.error('Background confirmation email failed:', err.message);
