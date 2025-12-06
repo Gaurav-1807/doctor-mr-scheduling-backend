@@ -2,7 +2,11 @@ const Appointment = require('../models/Appointment');
 const Slot = require('../models/Slot');
 const Notification = require('../models/Notification');
 const { getNextAvailableSlot } = require('../utils/slotGenerator');
-const { sendAppointmentConfirmation } = require('../utils/emailService');
+const { 
+  sendAppointmentConfirmationAsync,
+  sendAppointmentCancellationAsync,
+  sendAppointmentCompletionAsync 
+} = require('../utils/emailService');
 const Doctor = require('../models/Doctor');
 const MR = require('../models/MR');
 
@@ -122,8 +126,8 @@ exports.bookAppointment = async (req, res) => {
       relatedId: appointment._id
     });
 
-    // Send email
-    await sendAppointmentConfirmation(
+    // Send email (non-blocking - don't wait for response)
+    sendAppointmentConfirmationAsync(
       mr.email,
       doctor.name,
       slot.date.toLocaleDateString(),
@@ -263,9 +267,8 @@ exports.updateAppointmentStatus = async (req, res) => {
       
       appointment.cancellationReason = cancellationReason;
 
-      // Send cancellation email to MR
-      const { sendAppointmentCancellation } = require('../utils/emailService');
-      await sendAppointmentCancellation(
+      // Send cancellation email to MR (non-blocking)
+      sendAppointmentCancellationAsync(
         appointment.mrId.email,
         appointment.mrId.name,
         appointment.doctorId.name,
@@ -285,10 +288,9 @@ exports.updateAppointmentStatus = async (req, res) => {
       });
     }
 
-    // If completing appointment, send completion email
+    // If completing appointment, send completion email (non-blocking)
     if (status === 'completed' && appointment.status !== 'completed') {
-      const { sendAppointmentCompletion } = require('../utils/emailService');
-      await sendAppointmentCompletion(
+      sendAppointmentCompletionAsync(
         appointment.mrId.email,
         appointment.mrId.name,
         appointment.doctorId.name,

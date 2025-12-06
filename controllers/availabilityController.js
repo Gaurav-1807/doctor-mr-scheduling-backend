@@ -136,7 +136,7 @@ exports.deleteAvailability = async (req, res) => {
     const Appointment = require('../models/Appointment');
     const Slot = require('../models/Slot');
     const Notification = require('../models/Notification');
-    const { sendEmail } = require('../utils/emailService');
+    const { sendEmailAsync } = require('../utils/emailService');
     const { findAvailableSlots } = require('../utils/smartRescheduling');
 
     const availability = await Availability.findOne({
@@ -239,9 +239,9 @@ exports.deleteAvailability = async (req, res) => {
                 relatedId: apt._id
               });
 
-              // Send email if MR has email
+              // Send email if MR has email (non-blocking)
               if (apt.mrId?.email) {
-                await sendEmail(
+                sendEmailAsync(
                   apt.mrId.email,
                   'Appointment Rescheduled - MRAlo',
                   `
@@ -269,7 +269,7 @@ exports.deleteAvailability = async (req, res) => {
               });
 
               if (apt.mrId?.email) {
-                await sendEmail(
+                sendEmailAsync(
                   apt.mrId.email,
                   'Appointment Cancelled - MRAlo',
                   `
@@ -320,7 +320,7 @@ exports.deleteAvailability = async (req, res) => {
           });
 
           if (apt.mrId?.email) {
-            await sendEmail(
+            sendEmailAsync(
               apt.mrId.email,
               'Appointment Cancelled - MRAlo',
               `
@@ -430,7 +430,7 @@ exports.markUnavailable = async (req, res) => {
     const Appointment = require('../models/Appointment');
     const Slot = require('../models/Slot');
     const Notification = require('../models/Notification');
-    const { sendAppointmentCancellation } = require('../utils/emailService');
+    const { sendAppointmentCancellationAsync } = require('../utils/emailService');
     const Doctor = require('../models/Doctor');
     
     const searchDate = new Date(date);
@@ -492,8 +492,8 @@ exports.markUnavailable = async (req, res) => {
           await slot.save();
         }
 
-        // Send email notification
-        await sendAppointmentCancellation(
+        // Send email notification (non-blocking)
+        sendAppointmentCancellationAsync(
           appointment.mrId.email,
           appointment.mrId.name,
           appointment.doctorId.name,

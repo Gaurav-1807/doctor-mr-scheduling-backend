@@ -216,11 +216,42 @@ const sendAppointmentCompletion = async (mrEmail, mrName, doctorName, date, time
   return sendEmail(mrEmail, subject, html);
 };
 
+// Fire-and-forget wrapper - doesn't wait for email to complete
+const sendEmailAsync = (to, subject, html) => {
+  // Don't await - just fire and forget
+  sendEmail(to, subject, html).catch(err => {
+    console.error(`Background email failed to ${to}:`, err.message);
+  });
+};
+
+// Non-blocking versions of email functions
+const sendAppointmentConfirmationAsync = (mrEmail, doctorName, date, time) => {
+  sendAppointmentConfirmation(mrEmail, doctorName, date, time).catch(err => {
+    console.error('Background confirmation email failed:', err.message);
+  });
+};
+
+const sendAppointmentCancellationAsync = (mrEmail, mrName, doctorName, date, time, reason) => {
+  sendAppointmentCancellation(mrEmail, mrName, doctorName, date, time, reason).catch(err => {
+    console.error('Background cancellation email failed:', err.message);
+  });
+};
+
+const sendAppointmentCompletionAsync = (mrEmail, mrName, doctorName, date, time) => {
+  sendAppointmentCompletion(mrEmail, mrName, doctorName, date, time).catch(err => {
+    console.error('Background completion email failed:', err.message);
+  });
+};
+
 module.exports = {
   sendEmail,
+  sendEmailAsync,
   sendAppointmentConfirmation,
+  sendAppointmentConfirmationAsync,
   sendFollowUpReminder,
   sendDailyScheduleEmail,
   sendAppointmentCancellation,
-  sendAppointmentCompletion
+  sendAppointmentCancellationAsync,
+  sendAppointmentCompletion,
+  sendAppointmentCompletionAsync
 };
